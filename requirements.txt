@@ -4,7 +4,7 @@ easyocr
 panda
 numpy
 temp
-os
+os-sys
 ultralytics
 norfair
 matplotlib.pyplot
