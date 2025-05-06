@@ -1,0 +1,11 @@
+streamlit
+opencv-python-headless
+easyocr
+panda
+numpy
+tempfile
+os
+ultralytics
+norfair
+matplotlib.pyplot
+deep-sort-realtime
