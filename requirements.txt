@@ -7,5 +7,5 @@ temp
 os-sys
 ultralytics
 norfair
-matplotlib.pyplot
+matplotlib
 deep-sort-realtime
