@@ -11,9 +11,9 @@ import matplotlib.pyplot as plt
 from deep_sort_realtime.deepsort_tracker import DeepSort
 
 # Load different models for each page
-video_analyzer_model = YOLO('best_possession_model.pt')  # Model for Video Analyzer page
-shot_analysis_model = YOLO('best_scoring_model.pt')    # Model for Shot Analysis page
-advance_video_analysis = YOLO('bestjersey.pt')
+video_analyzer_model = YOLO('Models/best_possession_model.pt')  # Model for Video Analyzer page
+shot_analysis_model = YOLO('Models/best_scoring_model.pt')    # Model for Shot Analysis page
+advance_video_analysis = YOLO('Models/bestjersey.pt')
 # Initialize EasyOCR
 reader = easyocr.Reader(['en'])
 
