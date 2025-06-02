@@ -481,11 +481,18 @@ elif page == 'Advance Analysis':
         df = pd.DataFrame(data)
         st.table(df)
 
-        fig, ax = plt.subplots(figsize=(5, 3))
-        ax.bar(data["Category"], data["Count"], color=["gold", "green", "red", "orange", "salmon", "skyblue", "deepskyblue"])
+        fig, ax = plt.subplots(figsize=(4, 2.5), dpi=120)  # Smaller width/height and higher DPI
+
+        ax.bar(
+        data["Category"],
+        data["Count"],
+        color=["gold", "green", "red", "orange", "salmon", "skyblue", "deepskyblue"]
+        )
         ax.set_ylabel("Count")
         ax.set_title("Basketball Shot Analysis")
         plt.xticks(rotation=45)
+        plt.tight_layout()
+
         st.pyplot(fig)
 
         with open(temp_output, "rb") as f:
