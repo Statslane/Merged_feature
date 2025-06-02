@@ -49,16 +49,17 @@ def extract_jersey_number(jersey_crop):
     return None
 
 # Streamlit Page Config
-st.set_page_config(page_title="🏀 Basketball Analyzer", layout="wide")
+st.set_page_config(page_title="Basketball Video TagAI", layout="wide")
 
 # Sidebar navigation
 page = st.sidebar.selectbox("Select a page", ["Home", "Video Analyzer", "Shot Analysis", "Advance Analysis"])
 
 # Home Page
 if page == "Home":
-    st.title("🏀 Basketball Video Analyzer")
+    st.image("logos/logo.png", width=150)
+    st.title("Basketball Video TagAI")
     st.markdown("""
-    Welcome to the **Basketball Video Analyzer**! 🏀🎥
+    Welcome to the **Basketball Video TagAI**! 🏀🎥
 
     This tool allows you to:
     - Upload and analyze basketball game videos
@@ -71,7 +72,7 @@ if page == "Home":
 
 # Video Analyzer Page
 elif page == "Video Analyzer":
-    st.title("🏀 Basketball Video Analyzer")
+    st.title("Basketball Video Analyzer")
     st.write("Upload a video to detect ball possession and count team possession times.")
     uploaded_file = st.file_uploader("Upload Video", type=["mp4", "avi", "mov"])
 
@@ -307,7 +308,8 @@ elif page == 'Advance Analysis':
 
     # Page setup
     # st.set_page_config(page_title="🏀 Basketball Analyzer", layout="wide")
-    st.title("🏀 Basketball Analyzer")
+    st.image("logos/logo.png", width=150)
+    st.title("Basketball Video TagAI")
 
     # Sidebar
     st.sidebar.title("🧠 AI Video Analyzer")
@@ -479,7 +481,7 @@ elif page == 'Advance Analysis':
         df = pd.DataFrame(data)
         st.table(df)
 
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(5, 3))
         ax.bar(data["Category"], data["Count"], color=["gold", "green", "red", "orange", "salmon", "skyblue", "deepskyblue"])
         ax.set_ylabel("Count")
         ax.set_title("Basketball Shot Analysis")
