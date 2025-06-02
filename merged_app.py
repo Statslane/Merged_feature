@@ -488,9 +488,10 @@ elif page == 'Advance Analysis':
         data["Count"],
         color=["gold", "green", "red", "orange", "salmon", "skyblue", "deepskyblue"]
         )
-        ax.set_ylabel("Count")
-        ax.set_title("Basketball Shot Analysis")
-        plt.xticks(rotation=45)
+        ax.set_ylabel("Count", fontsize=8)
+        ax.set_title("Basketball Shot Analysis", fontsize=10)
+        plt.xticks(rotation=45, fontsize=7)
+        plt.yticks(fontsize=7)
         plt.tight_layout()
 
         st.pyplot(fig)
