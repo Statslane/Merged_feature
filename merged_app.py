@@ -52,8 +52,26 @@ def extract_jersey_number(jersey_crop):
 st.set_page_config(page_title="Basketball Video TagAI", layout="wide")
 
 # Sidebar navigation
-page = st.sidebar.selectbox("Select a page", ["Home", "Video Analyzer", "Shot Analysis", "Advance Analysis"])
+st.markdown("""
+    <style>
+    /* Target the sidebar's radio button text */
+    [data-testid="stSidebar"] [data-baseweb="radio"] > div {
+        font-size: 40px !important;
+    }
 
+    /* Optional: change the radio header/title */
+    [data-testid="stSidebar"] .stRadio label {
+        font-size: 42px !important;
+        font-weight: bold;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Sidebar radio input
+page = st.sidebar.radio(
+    "Select a Page",
+    ["Home", "Video Analyzer", "Shot Analysis", "Advance Analysis", "Player Stats", "Team Stats", "Opponent Scouting", "Training & Development"]    
+)
 # Home Page
 if page == "Home":
     st.image("logos/logo.png", width=150)
