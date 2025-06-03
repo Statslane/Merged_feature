@@ -316,13 +316,79 @@ elif page == "Shot Analysis":
 
 elif page == 'Advance Analysis':
 
-    # Initialize DeepSort for tracking only players (class 5)
-    deep_sort = DeepSort(
-        max_age=10,
-        n_init=3,
-        max_cosine_distance=0.3,
-        nn_budget=100
-    )
+    # Configuration
+    EXTRA_FRAMES = 5  # Number of extra frames to add to each clip
+    
+    # Initialize session state for caching
+    if 'clips' not in st.session_state:
+        st.session_state.clips = None
+    if 'processed_data' not in st.session_state:
+        st.session_state.processed_data = None
+    if 'frame_numbers' not in st.session_state:
+        st.session_state.frame_numbers = {'make': [], 'miss': []}
+    
+        # Initialize DeepSort for tracking only players (class 5)
+        deep_sort = DeepSort(
+            max_age=10,
+            n_init=3,
+            max_cosine_distance=0.3,
+            nn_budget=100
+        )
+    # Function to create video clips
+    def create_video_clips(input_video, frame_events, output_dir):
+        cap = cv2.VideoCapture(input_video)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        clips = []
+        make_count = 1  # Counter for make clips
+        miss_count = 1  # Counter for miss clips
+
+        # Sort all frame numbers and their types
+        all_events = [(frame, 'make') for frame in frame_events['make']] + [(frame, 'miss') for frame in frame_events['miss']]
+        all_events.sort()  # Sort by frame number
+
+        # Add start frame (1) if not already included
+        if not all_events or all_events[0][0] != 1:
+            all_events.insert(0, (1, 'start'))
+
+        # Create clips
+        for i in range(len(all_events)):
+            start_frame = all_events[i][0]
+            event_type = all_events[i][1]
+            end_frame = all_events[i + 1][0] if i + 1 < len(all_events) else total_frames
+            # Extend end_frame by EXTRA_FRAMES, but not beyond total frames
+            extended_end_frame = min(end_frame + EXTRA_FRAMES, total_frames)
+
+            # Determine clip name based on event type
+            if event_type == 'make':
+                clip_name = f"Make Clip {make_count}.mp4"
+                make_count += 1
+            elif event_type == 'miss':
+                clip_name = f"Miss Clip {miss_count}.mp4"
+                miss_count += 1
+            else:
+                clip_name = f"Start Clip.mp4"  # For the first clip if it starts at frame 1
+
+            clip_path = os.path.join(output_dir, clip_name)
+
+            # Reset video capture to start frame
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame - 1)
+            out = cv2.VideoWriter(clip_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+
+            # Write frames to clip
+            for frame_num in range(start_frame, extended_end_frame + 1):
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                out.write(frame)
+
+            out.release()
+            clips.append((clip_name, clip_path))
+
+        cap.release()
+        return clips
 
     # Page setup
     # st.set_page_config(page_title="🏀 Basketball Analyzer", layout="wide")
@@ -341,182 +407,276 @@ elif page == 'Advance Analysis':
     st.sidebar.markdown("- 📏 Player Tracking with ID")
     show_preds = st.sidebar.checkbox("Show Predictions on Video", value=True)
 
-    uploaded_file = st.file_uploader("Upload a Basketball Video", type=["mp4", "avi", "mov"])
-    if uploaded_file:
-        temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
-        temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+# File uploader
+uploaded_file = st.file_uploader("Upload a Basketball Video", type=["mp4", "avi", "mov"])
 
-        with open(temp_input, "wb") as f:
-            f.write(uploaded_file.read())
+# Process video only if not already processed
+if uploaded_file and st.session_state.clips is None:
+    temp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+    temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+    temp_dir = tempfile.mkdtemp()  # Directory for clips
 
-        st.video(temp_input)
+    with open(temp_input, "wb") as f:
+        f.write(uploaded_file.read())
 
-        with st.spinner("🔍 Processing Video..."):
-            cap = cv2.VideoCapture(temp_input)
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = int(cap.get(cv2.CAP_PROP_FPS))
+    st.video(temp_input)
 
-            slow_motion_factor = 3
-            out = cv2.VideoWriter(temp_output, cv2.VideoWriter_fourcc(*"mp4v"), fps // slow_motion_factor, (width, height))
+    with st.spinner("🔍 Processing Video..."):
+        cap = cv2.VideoCapture(temp_input)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
 
-            # Counters
-            teamA_make = teamB_make = teamA_miss = teamB_miss = 0
-            stable_total_make = stable_total_miss = 0
-            stable_event_running = False
-            stable_current_event = None
-            last_team_detected = None
+        slow_motion_factor = 3
+        out = cv2.VideoWriter(temp_output, cv2.VideoWriter_fourcc(*"mp4v"), fps // slow_motion_factor, (width, height))
 
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
+        # Counters and frame lists
+        teamA_make = teamB_make = teamA_miss = teamB_miss = 0
+        stable_total_make = stable_total_miss = 0
+        make_frames = []  # List to store frame numbers of makes
+        miss_frames = []  # List to store frame numbers of misses
+        stable_event_running = False
+        stable_current_event = None
+        last_team_detected = None
+        frame_count = 0  # Track current frame number
+        last_event_frame = 0  # Track the last frame of the current event sequence
 
-                for _ in range(slow_motion_factor - 1):
-                    cap.read()
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-                results = advance_video_analysis(frame, verbose=False)
-                detections_for_deepsort = []
-                make_in_frame = miss_in_frame = teamA_in_frame = teamB_in_frame = False
+            for _ in range(slow_motion_factor - 1):
+                cap.read()
+                frame_count += 1
 
-                for r in results:
-                    for box in r.boxes:
-                        cls = int(box.cls[0])
-                        conf = float(box.conf[0])
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+            results = advance_video_analysis(frame, verbose=False)
+            detections_for_deepsort = []
+            make_in_frame = miss_in_frame = teamA_in_frame = teamB_in_frame = False
 
-                        if cls == 0:  # Ball
-                            label = f"Ball {conf:.2f}"
-                            color = (255, 255, 0)
+            for r in results:
+                for box in r.boxes:
+                    cls = int(box.cls[0])
+                    conf = float(box.conf[0])
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
 
-                        elif cls == 2:  # Make
-                            label = f"Make {conf:.2f}"
-                            color = (0, 255, 0)
-                            make_in_frame = True
+                    if cls == 0:  # Ball
+                        label = f"Ball {conf:.2f}"
+                        color = (255, 255, 0)
 
-                        elif cls == 3:  # Miss
-                            label = f"Miss {conf:.2f}"
-                            color = (255, 0, 0)
-                            miss_in_frame = True
+                    elif cls == 2:  # Make
+                        label = f"Make {conf:.2f}"
+                        color = (0, 255, 0)
+                        make_in_frame = True
 
-                        elif cls == 1:  # Hoop
-                            label = f"Hoop {conf:.2f}"
-                            color = (255, 255, 255)
+                    elif cls == 3:  # Miss
+                        label = f"Miss {conf:.2f}"
+                        color = (255, 0, 0)
+                        miss_in_frame = True
 
-                        elif cls == 6:  # TeamA
-                            label = f"TeamA {conf:.2f}"
-                            color = (255, 140, 0)
-                            teamA_in_frame = True
+                    elif cls == 1:  # Hoop
+                        label = f"Hoop {conf:.2f}"
+                        color = (255, 255, 255)
 
-                        elif cls == 7:  # TeamB
-                            label = f"TeamB {conf:.2f}"
-                            color = (0, 191, 255)
-                            teamB_in_frame = True
+                    elif cls == 6:  # TeamA
+                        label = f"TeamA {conf:.2f}"
+                        color = (255, 140, 0)
+                        teamA_in_frame = True
 
-                        elif cls == 5:  # Player
-                            if conf > 0.4:  # Add confidence filter
-                                detections_for_deepsort.append(([x1, y1, x2 - x1, y2 - y1], conf, None))
-                            continue
+                    elif cls == 7:  # TeamB
+                        label = f"TeamB {conf:.2f}"
+                        color = (0, 191, 255)
+                        teamB_in_frame = True
 
-                        else:
-                            continue
-
-                        if show_preds:
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                            cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
-                # Apply DeepSORT to player boxes only
-                tracks = deep_sort.update_tracks(detections_for_deepsort, frame=frame)
-                for track in tracks:
-                    if not track.is_confirmed():
+                    elif cls == 5:  # Player
+                        if conf > 0.4:
+                            detections_for_deepsort.append(([x1, y1, x2 - x1, y2 - y1], conf, None))
                         continue
-                    track_id = track.track_id
-                    ltrb = track.to_ltrb()
-                    x1, y1, x2, y2 = map(int, ltrb)
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 255), 2)
-                    cv2.putText(frame, f"Player {track_id}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
 
-                # Team tracking
-                if teamA_in_frame:
-                    last_team_detected = "teamA"
-                if teamB_in_frame:
-                    last_team_detected = "teamB"
+                    else:
+                        continue
 
-                # Event tracking
-                if make_in_frame and not stable_event_running:
-                    stable_current_event = "make"
-                    stable_event_running = True
+                    if show_preds:
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                        cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-                elif miss_in_frame and not stable_event_running:
-                    stable_current_event = "miss"
-                    stable_event_running = True
+            # Apply DeepSORT to player boxes only
+            tracks = deep_sort.update_tracks(detections_for_deepsort, frame=frame)
+            for track in tracks:
+                if not track.is_confirmed():
+                    continue
+                track_id = track.track_id
+                ltrb = track.to_ltrb()
+                x1, y1, x2, y2 = map(int, ltrb)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 255), 2)
+                cv2.putText(frame, f"Player {track_id}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
 
-                elif not make_in_frame and not miss_in_frame and stable_event_running:
-                    if stable_current_event == "make":
-                        stable_total_make += 1
-                        if last_team_detected == "teamA":
-                            teamA_make += 1
-                        elif last_team_detected == "teamB":
-                            teamB_make += 1
-                    elif stable_current_event == "miss":
-                        stable_total_miss += 1
-                        if last_team_detected == "teamA":
-                            teamA_miss += 1
-                        elif last_team_detected == "teamB":
-                            teamB_miss += 1
-                    stable_event_running = False
-                    stable_current_event = None
+            # Team tracking
+            if teamA_in_frame:
+                last_team_detected = "teamA"
+            if teamB_in_frame:
+                last_team_detected = "teamB"
 
-                out.write(frame)
+            # Event tracking
+            if make_in_frame and not stable_event_running:
+                stable_current_event = "make"
+                stable_event_running = True
+                last_event_frame = frame_count  # Start of make sequence
 
-            cap.release()
-            out.release()
+            elif miss_in_frame and not stable_event_running:
+                stable_current_event = "miss"
+                stable_event_running = True
+                last_event_frame = frame_count  # Start of miss sequence
 
-        st.success("✅ Video Processed!")
+            elif (make_in_frame or miss_in_frame) and stable_event_running:
+                # Update last_event_frame if the same event continues
+                if (make_in_frame and stable_current_event == "make") or (miss_in_frame and stable_current_event == "miss"):
+                    last_event_frame = frame_count
 
-        # Results
-        st.subheader("📊 Detection Summary")
-        data = {
-            "Category": [
-                "Total Attempts",
-                "Total Makes",
-                "Total Misses",
-                "Team A Makes",
-                "Team A Misses",
-                "Team B Makes",
-                "Team B Misses",
-            ],
-            "Count": [
-                stable_total_make + stable_total_miss,
-                stable_total_make,
-                stable_total_miss,
-                teamA_make,
-                teamA_miss,
-                teamB_make,
-                teamB_miss,
-            ]
+            elif not make_in_frame and not miss_in_frame and stable_event_running:
+                # Event sequence has ended, save the last frame
+                if stable_current_event == "make":
+                    make_frames.append(last_event_frame)  # Save last frame of make sequence
+                    stable_total_make += 1
+                    if last_team_detected == "teamA":
+                        teamA_make += 1
+                    elif last_team_detected == "teamB":
+                        teamB_make += 1
+                elif stable_current_event == "miss":
+                    miss_frames.append(last_event_frame)  # Save last frame of miss sequence
+                    stable_total_miss += 1
+                    if last_team_detected == "teamA":
+                        teamA_miss += 1
+                    elif last_team_detected == "teamB":
+                        teamB_miss += 1
+                stable_event_running = False
+                stable_current_event = None
+
+            out.write(frame)
+            frame_count += 1
+
+        # Handle case where video ends during an event
+        if stable_event_running:
+            if stable_current_event == "make":
+                make_frames.append(last_event_frame)
+                stable_total_make += 1
+                if last_team_detected == "teamA":
+                    teamA_make += 1
+                elif last_team_detected == "teamB":
+                    teamB_make += 1
+            elif stable_current_event == "miss":
+                miss_frames.append(last_event_frame)
+                stable_total_miss += 1
+                if last_team_detected == "teamA":
+                    teamA_miss += 1
+                elif last_team_detected == "teamB":
+                    teamB_miss += 1
+
+        cap.release()
+        out.release()
+
+        # Create video clips
+        frame_events = {'make': make_frames, 'miss': miss_frames}
+        clips = create_video_clips(temp_input, frame_events, temp_dir)
+
+        # Cache results in session state
+        st.session_state.clips = clips
+        st.session_state.processed_data = {
+            'teamA_make': teamA_make,
+            'teamB_make': teamB_make,
+            'teamA_miss': teamA_miss,
+            'teamB_miss': teamB_miss,
+            'stable_total_make': stable_total_make,
+            'stable_total_miss': stable_total_miss
         }
-        df = pd.DataFrame(data)
-        st.table(df)
+        st.session_state.frame_numbers = frame_events
+        st.session_state.temp_output = temp_output
+        st.session_state.temp_dir = temp_dir
+        st.session_state.temp_input = temp_input
 
-        fig, ax = plt.subplots(figsize=(4, 2.5), dpi=120)  # Smaller width/height and higher DPI
+    st.success("✅ Video Processed!")
 
-        ax.bar(
-        data["Category"],
-        data["Count"],
-        color=["gold", "green", "red", "orange", "salmon", "skyblue", "deepskyblue"]
-        )
-        ax.set_ylabel("Count", fontsize=8)
-        ax.set_title("Basketball Shot Analysis", fontsize=10)
-        plt.xticks(rotation=45, fontsize=7)
-        plt.yticks(fontsize=7)
-        plt.tight_layout()
+# Display results if available
+if st.session_state.processed_data:
+    # Results
+    st.subheader("📊 Detection Summary")
+    data = {
+        "Category": [
+            "Total Attempts",
+            "Total Makes",
+            "Total Misses",
+            "Team A Makes",
+            "Team A Misses",
+            "Team B Makes",
+            "Team B Misses",
+        ],
+        "Count": [
+            st.session_state.processed_data['stable_total_make'] + st.session_state.processed_data['stable_total_miss'],
+            st.session_state.processed_data['stable_total_make'],
+            st.session_state.processed_data['stable_total_miss'],
+            st.session_state.processed_data['teamA_make'],
+            st.session_state.processed_data['teamA_miss'],
+            st.session_state.processed_data['teamB_make'],
+            st.session_state.processed_data['teamB_miss'],
+        ]
+    }
+    df = pd.DataFrame(data)
+    st.table(df)
 
-        st.pyplot(fig)
+    # # Display frame numbers
+    # st.subheader("🖼️ Frame Numbers")
+    # st.write("**Make Frames:**", ", ".join(map(str, st.session_state.frame_numbers['make'])) if st.session_state.frame_numbers['make'] else "No makes detected")
+    # st.write("**Miss Frames:**", ", ".join(map(str, st.session_state.frame_numbers['miss'])) if st.session_state.frame_numbers['miss'] else "No misses detected")
 
-        with open(temp_output, "rb") as f:
-            st.download_button("📥 Download Processed Video", f, file_name="processed_video.mp4", mime="video/mp4")
+    fig, ax = plt.subplots()
+    ax.bar(data["Category"], data["Count"], color=["gold", "green", "red", "orange", "salmon", "skyblue", "deepskyblue"])
+    ax.set_ylabel("Count")
+    ax.set_title("Basketball Shot Analysis")
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
 
-        os.remove(temp_input)
-        os.remove(temp_output)
+    st.markdown("### Download Processed Video")
+    with open(st.session_state.temp_output, "rb") as f:
+        st.download_button("📥 Download Processed Video", f, file_name="processed_video.mp4", mime="video/mp4", key="processed_video")
+        
+    # Display clips in a grid
+    st.subheader("🎥 Generated Clips")
+    col1, col2 = st.columns(2)  # Two columns for Make and Miss clips
+
+    with col1:
+        st.markdown("### Make Clips")
+        for clip_name, clip_path in st.session_state.clips:
+            if "Make Clip" in clip_name:
+                
+                with open(clip_path, "rb") as f:
+                    st.download_button(f"📥 Download {clip_name}", f, file_name=clip_name, mime="video/mp4", key=clip_name)
+
+
+    with col2:
+        st.markdown("### Miss Clips")
+        for clip_name, clip_path in st.session_state.clips:
+            if "Miss Clip" in clip_name:
+                
+                with open(clip_path, "rb") as f:
+                    st.download_button(f"📥 Download {clip_name}", f, file_name=clip_name, mime="video/mp4", key=clip_name)
+
+    # Handle Start Clip separately
+    # for clip_name, clip_path in st.session_state.clips:
+    #     if "Start Clip" in clip_name:
+    #         st.markdown("### Start Clip")
+            
+    #         with open(clip_path, "rb") as f:
+    #             st.download_button(f"📥 Download {clip_name}", f, file_name=clip_name, mime="video/mp4", key=clip_name)
+
+
+    # Cleanup
+    os.remove(st.session_state.temp_input)
+    os.remove(st.session_state.temp_output)
+    for _, clip_path in st.session_state.clips:
+        os.remove(clip_path)
+    os.rmdir(st.session_state.temp_dir)
+    # Clear session state after cleanup
+    st.session_state.clips = None
+    st.session_state.processed_data = None
+    st.session_state.frame_numbers = {'make': [], 'miss': []}
 
