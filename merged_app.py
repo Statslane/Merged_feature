@@ -666,8 +666,8 @@ elif page == 'Advance Analysis':
 
         fig, ax = plt.subplots(figsize=(5, 3))
         ax.bar(data["Category"], data["Count"], color=["gold", "green", "red", "orange", "salmon", "skyblue", "deepskyblue"])
-        ax.set_ylabel("Count",fontsize=10)
-        ax.set_title("Basketball Shot Analysis",fontsize=12)
+        ax.set_ylabel("Count",fontsize=5)
+        ax.set_title("Basketball Shot Analysis",fontsize=6)
         plt.xticks(rotation=45)
         st.pyplot(fig)
 
