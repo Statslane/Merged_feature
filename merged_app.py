@@ -664,10 +664,10 @@ elif page == 'Advance Analysis':
         # st.write("**Make Frames:**", ", ".join(map(str, st.session_state.frame_numbers['make'])) if st.session_state.frame_numbers['make'] else "No makes detected")
         # st.write("**Miss Frames:**", ", ".join(map(str, st.session_state.frame_numbers['miss'])) if st.session_state.frame_numbers['miss'] else "No misses detected")
 
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(5, 3))
         ax.bar(data["Category"], data["Count"], color=["gold", "green", "red", "orange", "salmon", "skyblue", "deepskyblue"])
-        ax.set_ylabel("Count")
-        ax.set_title("Basketball Shot Analysis")
+        ax.set_ylabel("Count",fontsize=10)
+        ax.set_title("Basketball Shot Analysis",fontsize=12)
         plt.xticks(rotation=45)
         st.pyplot(fig)
 
